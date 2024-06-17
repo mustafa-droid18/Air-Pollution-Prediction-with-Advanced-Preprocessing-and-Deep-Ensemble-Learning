@@ -2,8 +2,14 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import seaborn as sns
 import plotly.graph_objs as go
+import plotly.graph_objects as gg
 from plotly.subplots import make_subplots
 import math
+from sklearn.preprocessing import MinMaxScaler,RobustScaler,StandardScaler
+import numpy as np
+from sklearn.metrics import mean_squared_error
+from math import sqrt
+import os
 
 # Function to load a CSV file and preprocess it
 def load_csv(filepath):
@@ -144,28 +150,6 @@ def freq_distribution(df_list, variables, labels=None):
 
     plt.tight_layout()
     plt.show()
-
-# # Function to plot distribution of multiple variables on a specific date
-# def day_distribution(df, variables, date):
-#     day_data = df.loc[date]
-
-#     fig, axes = settings(variables, l=5, n_cols=2)
-
-#     # Plot each variable's distribution on the given date
-#     for i, variable in enumerate(variables):
-#         ax = axes[i]
-#         day_data[variable].plot(marker='o', linestyle='-', ax=ax)
-#         ax.set_title(f'{variable} Levels on {date}')
-#         ax.set_xlabel('Time')
-#         ax.set_ylabel(f'{variable} Level')
-#         ax.grid(True)
-
-#     # Remove any unused subplots
-#     for j in range(i + 1, len(axes)):
-#         fig.delaxes(axes[j])
-
-#     plt.tight_layout()
-#     plt.show()
 
 # Function to plot distribution of a specific variable from multiple DataFrames on a specific date
 def plot_day(value, df_list, labels, date, ax):
@@ -312,3 +296,189 @@ def day_of_week_wise_distribution(df, variables):
 
     plt.tight_layout()
     plt.show()
+
+# Function to scale features in a DataFrame
+def scaling(df, features_to_scale=[], scaler=RobustScaler(), s=False, r=False):
+
+    # If no specific features are provided, scale all columns
+    if features_to_scale == []:
+        features_to_scale = df.columns.tolist()
+
+    # Fit the scaler to the specified features in the DataFrame
+    scaler.fit(df[features_to_scale])
+
+    # Transform the specified features using the fitted scaler
+    scaled_data = scaler.transform(df[features_to_scale])
+
+    # Convert the scaled data array back to a DataFrame with the same index
+    scaled_df = pd.DataFrame(scaled_data, columns=features_to_scale, index=df.index)
+
+    # If s is True, print statistics of the scaled 'PM2.5' column
+    if s == True:
+        print("Max value of scaled 'PM2.5':", max(scaled_df['PM2.5']))
+        print("Min value of scaled 'PM2.5':", min(scaled_df['PM2.5']))
+        print(scaled_df['PM2.5'].describe())
+
+    if r==True:
+        return scaled_df,scaler
+    
+    return scaled_df
+
+def train_test_split(df):
+    
+    # Create new columns for day of week, month of year, hour of day, and year
+    df.loc[:, 'dow'] = df.index.day_of_week
+    df.loc[:, 'moy'] = df.index.month
+    df.loc[:, 'hour'] = df.index.hour
+    df.loc[:, 'year'] = df.index.year
+
+    # Split the DataFrame into training and testing sets based on the year and month
+    df_train = df.loc[(df['year'] < 2021) | (df['moy'] <= 5)].copy()
+    df_test = df.loc[(df['year'] >= 2021) & (df['moy'] >= 5)].copy()
+
+    # Filter df_train to include only the last 14 values
+    last_14_values = df_train.tail(14)
+
+    # Append the last 14 values from df_train to df_test
+    df_test = pd.concat([last_14_values, df_test], axis=0)
+
+    # Drop the 'year' column from both training and testing sets
+    df_train.drop(columns=['year'], inplace=True)
+    df_test.drop(columns=['year'], inplace=True)
+
+    return df_train, df_test
+
+def data_formating(df,columns=['PM2.5','PM10','NO2','NH3','SO2','CO','Ozone','Temp','RH','WS','WD','dow','moy','hour']):
+
+    df_values=df[columns].values
+
+    #Empty lists to be populated using formatted training data
+    X = []
+    Y = []
+
+    n_future = 1   # Number of days we want to look into the future based on the past hours.
+    n_past = 48  # Number of past hours we want to use to predict the future.
+
+    #Reformat input data into a shape: (n_samples x timesteps x n_features)
+    #In my example, my df_values has a shape (12823, 5)
+    #12823 refers to the number of data points and 5 refers to the columns (multi-variables).
+
+    for i in range(n_past, len(df_values) - n_future +1):
+        X.append(df_values[i - n_past:i, 0:df.shape[1]])
+        Y.append(df_values[i + n_future - 1:i + n_future, 0])
+
+    X, Y = np.array(X), np.array(Y)
+
+    print('X shape == {}.'.format(X.shape))
+    print('Y shape == {}.'.format(Y.shape))
+
+    return X,Y
+
+
+
+def plot_loss(history):
+
+    # Assuming history is your training history object from a Keras model
+    loss = history.history['loss']
+    val_loss = history.history['val_loss']
+    epochs = range(1, len(loss) + 1)
+
+    fig = gg.Figure()
+
+    fig.add_trace(gg.Scatter(x=list(epochs), y=loss, mode='lines', name='Training loss'))
+    fig.add_trace(gg.Scatter(x=list(epochs), y=val_loss, mode='lines', name='Validation loss'))
+
+    fig.update_layout(
+        title='Training and Validation Loss',
+        xaxis_title='Epoch',
+        yaxis_title='Loss',
+        legend=dict(x=0, y=1, traceorder='normal')
+    )
+
+    fig.show()
+
+def results(df_test,model,scaler,model_name='LSTM',scaler_name='Robust Scaler', imputation_method='PPCA'):
+
+    testX,testY= data_formating(df_test)
+
+    if model_name=="XGB":
+        testX = testX.reshape(testX.shape[0], -1)
+
+    # Make predictions on the test data
+    predictions = model.predict(testX)
+
+    actual_values= testY
+
+    # Calculate Mean Squared Error (MSE)
+    mse = mean_squared_error(actual_values, predictions)
+    print('Mean Squared Error (MSE) of Scaled Values:', mse)
+
+    # Calculate Root Mean Squared Error (RMSE)
+    rmse = sqrt(mse)
+    print('Root Mean Squared Error (RMSE) of Scaled Values:', rmse)
+
+    if model_name=='XGB':
+        predictions=predictions.reshape(predictions.shape[0],1)
+
+    unscaled_predictions= np.repeat(predictions, 11, axis=-1)
+    unscaled_actual_values=np.repeat(actual_values, 11, axis=-1)
+
+    unscaled_predictions = scaler.inverse_transform(unscaled_predictions)[:,0]
+    unscaled_actual_values= scaler.inverse_transform(unscaled_actual_values)[:,0]
+
+    # Calculate Mean Squared Error (MSE)
+    mse = mean_squared_error(unscaled_actual_values, unscaled_predictions)
+    print('Mean Squared Error (MSE) of Unscaled Values:', mse)
+
+    # Calculate Root Mean Squared Error (RMSE)
+    rmse = sqrt(mse)
+    print('Root Mean Squared Error (RMSE) of Unscaled Values:', rmse)
+
+    fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(12, 10), sharex=True)
+
+    # Plot scaled values
+    ax1.plot(actual_values, label='Actual (Scaled)', linestyle='-', color='blue')
+    ax1.plot(predictions, label='Predicted (Scaled)', linestyle='-', color='orange')
+    ax1.set_ylabel('Value')
+    ax1.set_title('Scaled Actual vs Predicted')
+    ax1.legend()
+    ax1.grid(True)
+
+    # Plot unscaled values
+    ax2.plot(unscaled_actual_values, label='Actual (Unscaled)', linestyle='-', color='green')
+    ax2.plot(unscaled_predictions, label='Predicted (Unscaled)', linestyle='-', color='orange')
+    ax2.set_xlabel('Index')
+    ax2.set_ylabel('Value')
+    ax2.set_title('Unscaled Actual vs Predicted')
+    ax2.legend()
+    ax2.grid(True)
+
+    plt.tight_layout()
+    plt.show()
+
+    save_predictions(model_name,scaler_name,imputation_method,unscaled_actual_values,unscaled_predictions)
+
+
+
+def save_predictions(model_name,scaler_name,imputation_method,actual_values,predictions):
+    
+    if model_name=='XGB':
+        data=pd.read_csv(f'./Final Results/{imputation_method}/{scaler_name} Predictions.csv')
+
+        data['XGRegressor_Prediction']=predictions
+        
+        # Saving DataFrame to a CSV file
+        data.to_csv(f'./Final Results/{imputation_method}/{scaler_name} Predictions.csv', index=False)
+
+    else:
+        
+        directory=f'./Final Results/{imputation_method}/'
+
+        if not os.path.exists(directory):
+            os.makedirs(directory)
+
+        # Create DataFrame
+        df = pd.DataFrame({'Actual Predictions':actual_values, 'LSTM_Prediction':predictions})
+
+        # Save DataFrame to CSV
+        df.to_csv(directory+f'{scaler_name} Predictions.csv', index=False)
