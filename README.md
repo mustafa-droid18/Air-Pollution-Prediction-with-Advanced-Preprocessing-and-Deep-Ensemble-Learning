@@ -1,9 +1,7 @@
 # Problem Statement 
 Develop a predictive model for PM2.5 forecasting aimed at providing accurate and timely predictions of particulate matter concentrations over a specified time horizon. The project encompasses data collection, preprocessing, and feature engineering, followed by the selection and training of appropriate machine learning or statistical models. Success will be measured by the model's ability to accurately forecast PM2.5 levels, as assessed through metrics such as mean absolute error (MAE), root mean squared error (RMSE) and R2
 
-# Air Quality Forecasting for Ghaziabad
-
-## Project Overview
+# Project Overview
 
 This project focuses on forecasting the particulate matter (PM 2.5) levels for the city of Ghaziabad over a 48-hour period using an ensemble learning model.
 
