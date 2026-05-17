@@ -31,7 +31,7 @@ This project focuses on forecasting the particulate matter (PM 2.5) levels for t
 
 - **Imputation**: PPCA outperformed other methods in filling missing values.
 - **Normalization**: Robust Scaler was the most efficient for normalizing time-series data.
-- **Model Performance**: The ensemble method achieved an R² score of 0.92, surpassing the individual models.
+- **Model Performance**: The ensemble method achieved an R² score of 0.89, surpassing the individual models.
 
 # Instructions to Run the Code
 
